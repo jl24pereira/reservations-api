@@ -1,3 +1,29 @@
 spring:
   application:
     name: api
+  profiles:
+    default: dev
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, circuitbreakers
+  endpoint:
+    health:
+      show-details: when-authorized
+
+app:
+  security:
+    jwt:
+      expiration: 1h
+  pago:
+    base-url: http://localhost:8081
+    connect-timeout: 2s
+    read-timeout: 3s
