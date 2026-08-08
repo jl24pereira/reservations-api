@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/reservations
+    username: reserv
+    password: reserv
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+    org.springframework.security: debug
+
+app:
+  security:
+    jwt:
+      secret: dev-secret-solo-para-desarrollo-local-min-256-bits-abcdefgh
