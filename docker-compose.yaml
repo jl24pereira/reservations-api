@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:18.4-alpine3.23
+    container_name: reservations-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reservations
+      POSTGRES_USER: reserv
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-reserv}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reserv -d reservations"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  payments:
+    image: wiremock/wiremock:3.13.2-alpine
+    container_name: reservations-payments
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./wiremock:/home/wiremock
+    command: ["--verbose", "--global-response-templating"]
+
+volumes:
+  pgdata:
