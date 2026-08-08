@@ -1,0 +1,25 @@
+{
+    "priority": 10,
+    "request": {
+        "method": "POST",
+        "urlPath": "/payments/validate",
+        "bodyPatterns": [
+            {
+                "matchesJsonPath": "$[?(@.paymentMethod =~ /^(?!SLOW|FAIL).*/)]"
+            }
+        ]
+    },
+    "response": {
+        "status": 200,
+        "headers": {
+            "Content-Type": "application/json"
+        },
+        "jsonBody": {
+            "authorizationId": "AUTH-{{randomValue type='UUID'}}",
+            "approved": true
+        },
+        "transformers": [
+            "response-template"
+        ]
+    }
+}

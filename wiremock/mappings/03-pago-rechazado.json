@@ -1,0 +1,21 @@
+{
+    "priority": 1,
+    "request": {
+        "method": "POST",
+        "urlPath": "/payments/validate",
+        "bodyPatterns": [
+            {
+                "matchesJsonPath": "$[?(@.paymentMethod == 'FAIL')]"
+            }
+        ]
+    },
+    "response": {
+        "status": 503,
+        "headers": {
+            "Content-Type": "application/json"
+        },
+        "jsonBody": {
+            "error": "payment gateway unavailable"
+        }
+    }
+}
