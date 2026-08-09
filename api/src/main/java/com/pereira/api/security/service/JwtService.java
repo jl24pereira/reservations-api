@@ -2,6 +2,8 @@ package com.pereira.api.security.service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Date;
 
 import javax.crypto.SecretKey;
@@ -52,6 +54,10 @@ public class JwtService {
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
+    }
+
+    public OffsetDateTime expirationFrom(String token) {
+        return parse(token).getExpiration().toInstant().atOffset(ZoneOffset.UTC);
     }
 
     private Claims parse(String token) {
