@@ -1,15 +1,19 @@
 package com.pereira.api.security.config;
 
+import com.pereira.api.security.filter.JwtAuthenticationFilter;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  *
@@ -18,6 +22,12 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 @EnableMethodSecurity
 public class SecutiryConfig {
+
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    public SecutiryConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    }
 
     @Bean
     PasswordEncoder passwordEncoder() {
@@ -37,7 +47,22 @@ public class SecutiryConfig {
                         .requestMatchers(HttpMethod.GET, "/espacios/**").authenticated()
                         .requestMatchers("/espacios/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
-                .httpBasic(Customizer.withDefaults())
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((req, res, e) -> {
+                            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            res.setContentType("application/problem+json");
+                            res.getWriter().write("""
+                                    {"type":"about:blank","title":"Unauthorized","status":401,\
+                                    "detail":"Se requiere autenticacion"}""");
+                        })
+                        .accessDeniedHandler((req, res, e) -> {
+                            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            res.setContentType("application/problem+json");
+                            res.getWriter().write("""
+                                    {"type":"about:blank","title":"Forbidden","status":403,\
+                                    "detail":"No tiene permisos para este recurso"}""");
+                        }))
                 .build();
     }
 }

@@ -26,6 +26,7 @@ class JwtServiceTest {
     @Test
     void generateAndValidate() {
         var token = jwt.generate("admin@coworking.com", "ADMIN");
+        System.out.println("TOKEN: " + token);
         assertTrue(jwt.isValid(token));
         assertEquals("admin@coworking.com", jwt.extractEmail(token));
 
