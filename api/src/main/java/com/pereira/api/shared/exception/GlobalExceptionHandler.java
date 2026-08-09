@@ -53,4 +53,24 @@ public class GlobalExceptionHandler {
     ProblemDetail generic(Exception e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Ha ocurrido un error inesperado");
     }
+
+    @ExceptionHandler(OverReservaException.class)
+    ProblemDetail overReserva(OverReservaException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTransactionException.class)
+    ProblemDetail transicion(InvalidTransactionException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidRangeException.class)
+    ProblemDetail invalidRange(InvalidRangeException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(ReservaNotFoundException.class)
+    ProblemDetail reservaNoEncontrada(ReservaNotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    }
 }
