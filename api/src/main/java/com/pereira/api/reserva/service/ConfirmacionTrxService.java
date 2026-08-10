@@ -9,10 +9,12 @@ import com.pereira.api.pago.repository.PagoRepository;
 import com.pereira.api.reserva.domain.EstadoReserva;
 import com.pereira.api.reserva.domain.Reserva;
 import com.pereira.api.reserva.dto.ReservaResponse;
+import com.pereira.api.reserva.event.ReservaConfirmadaEvent;
 import com.pereira.api.reserva.repository.ReservaRepository;
 import com.pereira.api.shared.exception.InvalidTransactionException;
 import com.pereira.api.shared.exception.ReservaNotFoundException;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +30,7 @@ public class ConfirmacionTrxService {
 
     private final ReservaRepository reservaRepository;
     private final PagoRepository pagoRepository;
+    private final ApplicationEventPublisher publisher;
 
     @Transactional(readOnly = true)
     public ConfirmedData prepareConfirmacion(UUID reservaId, UUID usuarioId, boolean isAdmin) {
@@ -52,6 +55,9 @@ public class ConfirmacionTrxService {
             pago.setEstado(EstadoPago.APPROVED);
             pago.setAutorizacionId(validacion.authorizationId());
             reserva.confirmar();
+
+            publisher.publishEvent(new ReservaConfirmadaEvent(reservaId, reserva.getUsuario().getEmail(),
+                    reserva.getEspacio().getNombre(), reserva.getInicio(), reserva.getFin()));
         } else {
             pago.setEstado(EstadoPago.PENDING);
             reserva.pagoPendiente();
