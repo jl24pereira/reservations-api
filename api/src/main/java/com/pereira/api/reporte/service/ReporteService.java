@@ -8,7 +8,9 @@ import java.util.List;
 
 import com.pereira.api.reporte.dto.OcupacionEspacioResponse;
 import com.pereira.api.reporte.repository.ReporteRepository;
+import com.pereira.api.shared.config.CacheConfig;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ public class ReporteService {
 
     private final ReporteRepository repository;
 
+    @Cacheable(cacheNames = CacheConfig.CACHE_OCUPACION, key = "#desde.toString() + '_' + #hasta.toString()")
     @Transactional(readOnly = true)
     public List<OcupacionEspacioResponse> ocupacion(OffsetDateTime desde, OffsetDateTime hasta) {
         long horasDisponibles = Duration.between(desde, hasta).toHours();
