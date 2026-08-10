@@ -48,6 +48,7 @@ public class SecutiryConfig {
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/espacios/**").authenticated()
                         .requestMatchers("/espacios/**").hasRole("ADMIN")
+                        .requestMatchers("/reportes/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(ex -> ex
