@@ -123,9 +123,9 @@ No hace falta tener Java, Gradle ni PostgreSQL instalados localmente — todo co
 
 ### Usuario inicial
 
-| Email                 | Password    | Rol   |
-| --------------------- | ----------- | ----- |
-| `admin@coworking.com` | `Admin123!` | ADMIN |
+| Email                 | Password   | Rol   |
+| --------------------- | ---------- | ----- |
+| `admin@coworking.com` | `admin123` | ADMIN |
 
 Los usuarios `USER` se crean con `POST /auth/register`. El registro fuerza el rol `USER`: no es posible autoasignarse `ADMIN`.
 
@@ -138,7 +138,7 @@ Los usuarios `USER` se crean con `POST /auth/register`. El registro fuerza el ro
 ```bash
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@coworking.com", "password": "Admin123!"}'
+  -d '{"email": "admin@coworking.com", "password": "admin123"}'
 ```
 
 La respuesta incluye el token, el tipo (`Bearer`) y la fecha de expiración. Todas las peticiones siguientes usan `Authorization: Bearer <token>`.
@@ -181,24 +181,60 @@ curl -X POST http://localhost:8080/reservas \
 
 La reserva nace en estado `PENDING` con el `montoTotal` ya calculado a partir de la tarifa vigente del espacio. Si el horario choca con otra reserva activa, devuelve `409`. Una reserva de 12:00–14:00 **sí** se permite, porque los rangos son semiabiertos.
 
-### Confirmar la reserva (dispara la validación de pago)
+### Simulación del servicio de pago
+
+El servicio externo de validación de pago está simulado con WireMock. Los stubs viven en
+`wiremock/mappings/` y se seleccionan según el valor de `paymentMethod` que envíe la
+petición de confirmación, lo que permite provocar cada escenario a voluntad sin tocar
+configuración ni reiniciar nada.
+
+| `paymentMethod`              | Stub                    | Respuesta del mock                                         | Efecto en la reserva                                           |
+| ---------------------------- | ----------------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
+| `VISA`, `MASTERCARD`, u otro | `01-pago-aprobado.json` | `200` con `approved: true` y un `authorizationId` generado | `CONFIRMED`                                                    |
+| `SLOW`                       | `02-pago-lento.json`    | `200`, pero tras 8 segundos                                | `PENDING_PAYMENT` (timeout de lectura a los 3s)                |
+| `FAIL`                       | `03-pago-error.json`    | `503 Service Unavailable`                                  | `PENDING_PAYMENT` (fallo contabilizado por el circuit breaker) |
+
+La selección se resuelve por prioridad de WireMock: los stubs de fallo declaran
+`"priority": 1` y filtran por un `paymentMethod` concreto; el stub de éxito declara
+`"priority": 10` y actúa como caso por defecto para cualquier otro valor. ww
+
+**Escenario de éxito**
 
 ```bash
 curl -X POST http://localhost:8080/reservas/<reservaId>/confirmar \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token-user>" \
+  -H "Authorization: Bearer <token>" \
   -d '{"paymentMethod": "VISA"}'
 ```
 
-El `paymentMethod` controla el comportamiento del servicio simulado, lo que permite provocar cada escenario a voluntad:
+La reserva pasa a `CONFIRMED`, se registra el pago con su `authorizationId` y se publica
+el evento de dominio que dispara la notificación asíncrona.
 
-| paymentMethod | Respuesta del mock  | Resultado                              |
-| ------------- | ------------------- | -------------------------------------- |
-| Cualquiera    | 200 aprobado        | Reserva `CONFIRMED`                    |
-| `SLOW`        | 200 tras 8 segundos | Timeout → `PENDING_PAYMENT`            |
-| `FAIL`        | 503                 | Fallo del circuito → `PENDING_PAYMENT` |
+**Escenario de servicio lento**
 
-Al confirmarse, se publica un evento de dominio que dispara la notificación asíncrona y la invalidación del caché de reportes.
+```bash
+curl -X POST http://localhost:8080/reservas/<reservaId>/confirmar \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"paymentMethod": "SLOW"}'
+```
+
+El mock tarda 8 segundos, pero el cliente corta a los 3 por el `readTimeout` configurado.
+El circuit breaker contabiliza el corte como fallo y la reserva queda en `PENDING_PAYMENT`.
+Sin ese timeout, una respuesta lenta nunca se convertiría en fallo y el circuito jamás
+llegaría a abrirse.
+
+**Escenario de error del proveedor**
+
+```bash
+curl -X POST http://localhost:8080/reservas/<reservaId>/confirmar \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"paymentMethod": "FAIL"}'
+```
+
+El mock devuelve `503`. La petición HTTP a la API responde `200` de todas formas: el
+fallback degrada el resultado a `PENDING_PAYMENT` en lugar de propagar el error al cliente.
 
 ### Demostrar el circuit breaker
 
@@ -267,8 +303,6 @@ PENDING ──confirmar──> CONFIRMED ──completar──> COMPLETED
 
 ## Decisiones Técnicas
 
-El enunciado pide justificar cada elemento, no solo incluirlo.
-
 ### Spring Boot 4.0.7 en lugar de 3.x
 
 El enunciado especifica Spring Boot 3.x. Se optó por 4.0.7 porque toda la rama 3.x alcanzó fin de vida en junio de 2026 y ya no recibe parches de seguridad. Entregar una base "lista para producción" sobre una versión sin soporte sería contradictorio con el objetivo del ejercicio.
@@ -312,7 +346,7 @@ public void confirmar() {
 
 ### Spring Security con JWT
 
-Configuración stateless con CSRF deshabilitado. **CSRF se desactiva porque no hay cookies de sesión que proteger**, no por comodidad: el ataque que previene no aplica a una API que autentica por header.
+Configuración stateless con CSRF deshabilitado. **CSRF se desactiva porque no hay cookies de sesión que proteger**.
 
 El `JwtAuthenticationFilter` extiende `OncePerRequestFilter` y nunca rechaza: si el token falta o es inválido, no autentica y deja que `AuthorizationFilter` decida.
 
@@ -343,9 +377,7 @@ resilience4j:
 
 Los umbrales están ajustados para ser **demostrables**: con los valores por defecto (ventana de 100 llamadas) harían falta decenas de peticiones para ver abrirse el circuito.
 
-**El fallback devuelve un resultado de dominio, no lanza excepción.** Ante fallo o circuito abierto, la reserva queda en `PENDING_PAYMENT` y la petición HTTP responde normalmente. Es el único punto del sistema donde un error se degrada silenciosamente, y por eso es también el único que registra un log de advertencia.
-
-**Los timeouts son parte esencial de la configuración, no un detalle.** Sin un `readTimeout` inferior a la latencia del servicio lento, una respuesta demorada nunca se convierte en fallo y el circuito jamás se abre. Se configuró en 3 segundos contra un stub que demora 8.
+**El fallback devuelve un resultado de dominio, no lanza excepción.** Ante fallo o circuito abierto, la reserva queda en `PENDING_PAYMENT` y la petición HTTP responde normalmente.
 
 ### Transaccionalidad: la llamada externa fuera de la transacción
 
@@ -359,22 +391,6 @@ El flujo se divide en tres pasos:
 
 Esto exigió **dos beans separados** (`ConfirmacionReservaService` y `ConfirmacionTxService`), porque las anotaciones basadas en AOP solo actúan sobre llamadas que cruzan el límite del bean: un método `@Transactional` invocado desde otro método de la misma clase se ejecuta sin transacción, silenciosamente. Es una concesión al funcionamiento del framework, pero es la única forma de conseguir transacciones cortas reales.
 
-### Eventos de dominio y procesamiento asíncrono
-
-```java
-@Async("notificacionExecutor")
-@TransactionalEventListener
-public void notificarConfirmacion(ReservaConfirmadaEvent evento) { ... }
-```
-
-**Por qué `@TransactionalEventListener` y no `@EventListener`:** su fase por defecto es `AFTER_COMMIT`. Si la transacción falla tras publicar el evento, el correo no se envía. Con un listener ordinario se notificaría al usuario de una reserva que nunca existió, y un correo enviado no se deshace.
-
-**Por qué un `TaskExecutor` propio:** el ejecutor por defecto no acota el número de hilos, lo que ante una ráfaga puede agotar recursos. El pool configurado tiene límites explícitos y un `threadNamePrefix` que hace visible en los logs que la ejecución ocurre fuera del hilo de la petición.
-
-Los eventos transportan **datos planos, no entidades**: el listener corre después del commit y en otro hilo, donde la sesión de Hibernate ya está cerrada.
-
-**Esto materializa el patrón Observer:** `ReservaConfirmadaEvent` tiene dos consumidores independientes —notificación e invalidación de caché— y ninguno conoce al otro ni al publicador.
-
 ### Caché del reporte
 
 `@Cacheable` sobre el endpoint de ocupación, con Caffeine.
@@ -382,10 +398,6 @@ Los eventos transportan **datos planos, no entidades**: el listener corre despu�
 **Por qué Caffeine y no el `ConcurrentMapCacheManager` por defecto:** el predeterminado no soporta TTL ni límite de tamaño. Como la clave depende del rango de fechas solicitado, un cliente podría generar entradas ilimitadas variando el rango — un vector de agotamiento de memoria. Se configuró `maximumSize(200)` y `expireAfterWrite(10m)`.
 
 La invalidación real ocurre por eventos (`@CacheEvict` en los listeners de reserva confirmada y cancelada); el TTL queda como red de seguridad ante cambios que no pasen por la aplicación.
-
-**Se invalida el caché completo** en lugar de entradas puntuales: las entradas se indexan por rango y una reserva puede pertenecer a múltiples rangos solapados (mes, trimestre, año). Determinar qué claves invalidar exigiría recorrer todas comparando rangos, con un costo superior al del recálculo.
-
-Nótese la asimetría deliberada respecto a la notificación: aquí se usa `@EventListener` ordinario. Si el commit falla tras vaciar el caché, la única consecuencia es un recálculo innecesario, nunca datos incorrectos. **La consecuencia del error determina la garantía necesaria.**
 
 ### Consultas y prevención de N+1
 
@@ -448,28 +460,9 @@ Los `V__` corren una sola vez y no pueden modificarse después de aplicados (Fly
 
 Detalles del esquema que vale la pena señalar:
 
-- **Enums como `varchar` + `check`** en lugar de tipos enum nativos: añadir un valor a un enum nativo exige `alter type` y complica las migraciones; el check da la misma garantía con más flexibilidad.
 - **Todas las marcas temporales son `timestamptz`**: con reservas por franja horaria, almacenar sin zona produce errores en cuanto servidor y cliente difieren.
 - **UUID como clave primaria**, generados con `uuidv7()` (función nativa desde PostgreSQL 18). No revelan volumen de negocio ni permiten enumerar recursos ajenos, y a diferencia de UUIDv4 mantienen los índices ordenados temporalmente.
 - **`on delete restrict`** entre reserva y espacio: un espacio con reservas no se borra, se desactiva. El `DELETE` de espacios es una baja lógica.
-
----
-
-## Trade-offs asumidos
-
-Decisiones conscientes por el límite de cuatro días.
-
-**Mapeo manual en lugar de MapStruct.** Los DTOs exponen factory methods estáticos (`EspacioResponse.from(entidad)`). Se descartó MapStruct por el costo de configurar sus annotation processors junto a Lombok frente al beneficio en un dominio de cuatro entidades.
-
-**`Page` de Spring Data expuesto directamente.** Acopla el contrato de la API a la estructura interna de la librería, que ha cambiado de forma entre versiones. Lo correcto sería un DTO de paginación propio.
-
-**Ocupación calculada sobre 24 horas disponibles.** Supuesto explícito. Modelar horarios de apertura por espacio daría porcentajes más representativos, pero amplía el modelo más allá de lo que pide el enunciado.
-
-**`SimpleClientHttpRequestFactory` como cliente HTTP.** Elegido frente al cliente del JDK porque aplica los timeouts de forma directa y evita la negociación HTTP/2 contra el mock. Su limitación conocida (no soporta todos los métodos HTTP) no afecta a una integración que solo hace POST.
-
-**Verificación de permisos duplicada** entre `ReservaService` y `ConfirmacionTxService`. Con dos usos, extraerla añadía una clase sin beneficio claro.
-
-**Logging acotado** al fallback del circuit breaker —el único punto donde un fallo se degrada silenciosamente— y al handler de errores no controlados. Se evitó el logging por método, que genera ruido sin aportar trazabilidad.
 
 ---
 
@@ -487,14 +480,4 @@ Lo que quedó pendiente y se abordaría en una siguiente iteración:
 - **Reintentos con backoff** sobre el servicio de pago, complementando el circuit breaker para fallos transitorios.
 - **Rate limiting** en los endpoints de autenticación, para mitigar fuerza bruta.
 - **Deshabilitar Swagger en producción** (`springdoc.api-docs.enabled: false`), pendiente en `application-prod.yml`.
-
----
-
-## Notas sobre el ecosistema Spring Boot 4
-
-Incidencias encontradas al trabajar sobre la rama 4.x, documentadas por si resultan útiles:
-
-- **JJWT requiere `jjwt-gson` en lugar de `jjwt-jackson`**: Boot 4 usa Jackson 3 (`tools.jackson.*`) y la variante Jackson de JJWT depende de Jackson 2, provocando un conflicto.
-- **Los starters de test están divididos por módulo** (`spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`, etc.) en lugar del antiguo `spring-boot-starter-test` unificado.
-- **`spring.http.client.*` quedó deprecado** en favor de `spring.http.clients.*`.
 
