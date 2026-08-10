@@ -98,10 +98,13 @@ public class ReservaService {
     public Page<ReservaResponse> list(FilterReservaRequest filter, Pageable pageable,
             UUID usuarioId, boolean esAdmin) {
         var filtroUsuario = esAdmin ? null : usuarioId;
-        return reservaRepository
-                .find(filtroUsuario, filter.espacioId(), filter.estado(),
-                        filter.desde(), filter.hasta(), pageable)
-                .map(ReservaResponse::from);
+        return reservaRepository.search(
+                filtroUsuario == null, filtroUsuario,
+                filter.espacioId() == null, filter.espacioId(),
+                filter.estado() == null, filter.estado(),
+                filter.desde() == null, filter.desde(),
+                filter.hasta() == null, filter.hasta(),
+                pageable).map(ReservaResponse::from);
     }
 
     private Reserva findWithPermissions(UUID reservaId, UUID usuarioId, boolean esAdmin) {

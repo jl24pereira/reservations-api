@@ -32,23 +32,28 @@ public interface ReservaRepository extends JpaRepository<Reserva, UUID> {
             select r from Reserva r
             join fetch r.espacio
             join fetch r.usuario
-            where (:usuarioId is null or r.usuario.id = :usuarioId)
-              and (:espacioId is null or r.espacio.id = :espacioId)
-              and (:estado is null or r.estado = :estado)
-              and (:desde is null or r.inicio >= :desde)
-              and (:hasta is null or r.fin <= :hasta)
+            where (:sinUsuario = true or r.usuario.id = :usuarioId)
+              and (:sinEspacio = true or r.espacio.id = :espacioId)
+              and (:sinEstado  = true or r.estado     = :estado)
+              and (:sinDesde   = true or r.inicio    >= :desde)
+              and (:sinHasta   = true or r.fin       <= :hasta)
             """, countQuery = """
             select count(r) from Reserva r
-            where (:usuarioId is null or r.usuario.id = :usuarioId)
-              and (:espacioId is null or r.espacio.id = :espacioId)
-              and (:estado is null or r.estado = :estado)
-              and (:desde is null or r.inicio >= :desde)
-              and (:hasta is null or r.fin <= :hasta)
+            where (:sinUsuario = true or r.usuario.id = :usuarioId)
+              and (:sinEspacio = true or r.espacio.id = :espacioId)
+              and (:sinEstado  = true or r.estado     = :estado)
+              and (:sinDesde   = true or r.inicio    >= :desde)
+              and (:sinHasta   = true or r.fin       <= :hasta)
             """)
-    Page<Reserva> find(@Param("usuarioId") UUID usuarioId,
+    Page<Reserva> search(@Param("sinUsuario") boolean sinUsuario,
+            @Param("usuarioId") UUID usuarioId,
+            @Param("sinEspacio") boolean sinEspacio,
             @Param("espacioId") UUID espacioId,
+            @Param("sinEstado") boolean sinEstado,
             @Param("estado") EstadoReserva estado,
+            @Param("sinDesde") boolean sinDesde,
             @Param("desde") OffsetDateTime desde,
+            @Param("sinHasta") boolean sinHasta,
             @Param("hasta") OffsetDateTime hasta,
             Pageable pageable);
 

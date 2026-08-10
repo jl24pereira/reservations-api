@@ -27,5 +27,24 @@ services:
       - ./wiremock:/home/wiremock
     command: ["--verbose", "--global-response-templating"]
 
+  api:
+    build:
+      context: ./api
+    container_name: reservations-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      payments:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/reservations
+      SPRING_DATASOURCE_USERNAME: reserv
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-reserv}
+      APP_PAGO_BASE_URL: http://payments:8080
+
 volumes:
   pgdata:
