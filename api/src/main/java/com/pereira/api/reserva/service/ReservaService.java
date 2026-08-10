@@ -41,7 +41,7 @@ public class ReservaService {
     private final UsuarioRepository usuarioRepository;
 
     @Transactional
-    public ReservaResponse crear(CreateReservaRequest request, UUID usuarioId) {
+    public ReservaResponse create(CreateReservaRequest request, UUID usuarioId) {
 
         validateRange(request.inicio(), request.fin());
 
@@ -76,19 +76,19 @@ public class ReservaService {
     }
 
     @Transactional
-    public ReservaResponse cancelar(UUID reservaId, UUID usuarioId, boolean esAdmin) {
+    public ReservaResponse cancel(UUID reservaId, UUID usuarioId, boolean esAdmin) {
         var reserva = findWithPermissions(reservaId, usuarioId, esAdmin);
         reserva.cancelar();
         return ReservaResponse.from(reserva);
     }
 
     @Transactional(readOnly = true)
-    public ReservaResponse obtener(UUID reservaId, UUID usuarioId, boolean esAdmin) {
+    public ReservaResponse get(UUID reservaId, UUID usuarioId, boolean esAdmin) {
         return ReservaResponse.from(findWithPermissions(reservaId, usuarioId, esAdmin));
     }
 
     @Transactional(readOnly = true)
-    public Page<ReservaResponse> listar(FilterReservaRequest filter, Pageable pageable,
+    public Page<ReservaResponse> list(FilterReservaRequest filter, Pageable pageable,
             UUID usuarioId, boolean esAdmin) {
         var filtroUsuario = esAdmin ? null : usuarioId;
         return reservaRepository
