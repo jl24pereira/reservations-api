@@ -63,4 +63,15 @@ public class Reserva extends BaseEntity {
     public void completar() {
         this.estado = ReservaStateFactory.of(this.estado).completar();
     }
+
+    public static Reserva createNew(Espacio espacio, Usuario usuario, OffsetDateTime inicio, OffsetDateTime fin) {
+        Reserva r = new Reserva();
+        r.espacio = espacio;
+        r.usuario = usuario;
+        r.inicio = inicio;
+        r.fin = fin;
+        r.estado = EstadoReserva.PENDING;
+        return r;
+    }
+
 }
