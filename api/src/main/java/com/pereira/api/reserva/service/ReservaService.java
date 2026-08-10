@@ -12,6 +12,7 @@ import com.pereira.api.reserva.domain.Reserva;
 import com.pereira.api.reserva.dto.CreateReservaRequest;
 import com.pereira.api.reserva.dto.FilterReservaRequest;
 import com.pereira.api.reserva.dto.ReservaResponse;
+import com.pereira.api.reserva.event.ReservaCanceladaEvent;
 import com.pereira.api.reserva.repository.ReservaRepository;
 import com.pereira.api.shared.exception.EspacioNotFoundException;
 import com.pereira.api.shared.exception.InvalidRangeException;
@@ -20,6 +21,7 @@ import com.pereira.api.shared.exception.ReservaNotFoundException;
 import com.pereira.api.usuario.domain.Usuario;
 import com.pereira.api.usuario.repository.UsuarioRepository;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -39,6 +41,7 @@ public class ReservaService {
     private final ReservaRepository reservaRepository;
     private final EspacioRepository espacioRepository;
     private final UsuarioRepository usuarioRepository;
+    private final ApplicationEventPublisher publisher;
 
     @Transactional
     public ReservaResponse create(CreateReservaRequest request, UUID usuarioId) {
@@ -79,6 +82,10 @@ public class ReservaService {
     public ReservaResponse cancel(UUID reservaId, UUID usuarioId, boolean esAdmin) {
         var reserva = findWithPermissions(reservaId, usuarioId, esAdmin);
         reserva.cancelar();
+
+        publisher.publishEvent(new ReservaCanceladaEvent(reservaId, reserva.getUsuario().getEmail(),
+                reserva.getEspacio().getNombre(), reserva.getInicio(), reserva.getFin()));
+
         return ReservaResponse.from(reserva);
     }
 
