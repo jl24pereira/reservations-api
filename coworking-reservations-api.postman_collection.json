@@ -1,0 +1,1479 @@
+{
+  "info": {
+    "name": "Coworking Reservations API",
+    "description": "Coleccion de pruebas para la API de gestion de reservas de espacios de coworking.\n\n## Uso\n\nLa forma mas simple es ejecutar la coleccion completa con el Collection Runner: las carpetas estan numeradas y los scripts capturan tokens e identificadores automaticamente en variables de coleccion, sin necesidad de copiar nada a mano.\n\nSi se ejecutan peticiones sueltas, respetar este orden minimo:\n\n1. `1. Auth` completa (captura los dos tokens)\n2. `2. Espacios > Listar espacios` (captura un espacio)\n3. `3. Reservas > Crear reserva 1..8`\n4. Las demas carpetas en cualquier orden\n\n## Notas\n\n- La secuencia de `5. Circuit Breaker` debe ejecutarse seguida: el circuito vuelve a HALF_OPEN a los 10 segundos de abrirse.\n- Las reservas usan fechas de marzo de 2027 para no colisionar con pruebas manuales.\n- Si se reinicio la base con `docker compose down -v`, ejecutar primero `Registrar USER`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "wiremockUrl", "value": "http://localhost:8081" },
+    { "key": "adminEmail", "value": "admin@coworking.com" },
+    { "key": "adminPassword", "value": "admin123" },
+    { "key": "userEmail", "value": "test@test.com" },
+    { "key": "userPassword", "value": "Test1234!" },
+    { "key": "fecha", "value": "2027-03-15" }, 
+    { "key": "offset", "value": "-06:00" },
+    { "key": "tokenAdmin", "value": "" },
+    { "key": "tokenUser", "value": "" },
+    { "key": "espacioId", "value": "" },
+    { "key": "espacioCreadoId", "value": "" },
+    { "key": "reservaId1", "value": "" },
+    { "key": "reservaId2", "value": "" },
+    { "key": "reservaId3", "value": "" },
+    { "key": "reservaId4", "value": "" },
+    { "key": "reservaId5", "value": "" },
+    { "key": "reservaId6", "value": "" },
+    { "key": "reservaId7", "value": "" },
+    { "key": "reservaId8", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Login ADMIN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('tokenAdmin', body.token);",
+                  "pm.test('Devuelve token', () => pm.expect(body.token).to.be.a('string'));",
+                  "pm.test('Devuelve fecha de expiracion', () => pm.expect(body.expiraEn).to.not.be.undefined);",
+                  "console.log('Token ADMIN capturado');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "Autentica al usuario ADMIN sembrado por la migracion V2."
+          }
+        },
+        {
+          "name": "Registrar USER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 (o 409 si ya existe)', () => pm.expect([201, 409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('Rol forzado a USER', () => pm.expect(body.rol).to.eql('USER'));",
+                  "  pm.test('No expone el hash de la password', () => pm.expect(body.passwordHash).to.be.undefined);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"nombre\": \"Usuario de Prueba\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "El rol se fuerza a USER en el servicio: el DTO no acepta el campo, de modo que nadie puede autoasignarse ADMIN."
+          }
+        },
+        {
+          "name": "Login USER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('tokenUser', pm.response.json().token);",
+                  "console.log('Token USER capturado');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Registro duplicado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 409', () => pm.response.to.have.status(409));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"nombre\": \"Duplicado\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Registro invalido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Lista los errores de validacion', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.errores).to.be.an('array');",
+                  "  pm.expect(body.errores.length).to.be.above(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"no-es-un-email\",\n  \"password\": \"123\",\n  \"nombre\": \"\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "description": "Bean Validation devuelve los tres errores agrupados en un ProblemDetail."
+          }
+        },
+        {
+          "name": "Password incorrecto (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Mensaje generico', () => {",
+                  "  pm.expect(pm.response.json().detail.toLowerCase()).to.include('credenciales');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"password-incorrecto\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "description": "El mensaje no distingue entre email inexistente y password incorrecto, para impedir enumeracion de usuarios."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Espacios",
+      "item": [
+        {
+          "name": "Listar espacios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Respuesta paginada', () => pm.expect(body.content).to.be.an('array'));",
+                  "if (body.content && body.content.length > 0) {",
+                  "  pm.collectionVariables.set('espacioId', body.content[0].id);",
+                  "  console.log('Espacio capturado: ' + body.content[0].nombre);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/espacios?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["espacios"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "incluirInactivos", "value": "true", "disabled": true }
+              ]
+            },
+            "description": "El parametro incluirInactivos solo surte efecto para ADMIN; un USER que lo envie lo vera ignorado."
+          }
+        },
+        {
+          "name": "Obtener espacio por id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": { "raw": "{{baseUrl}}/espacios/{{espacioId}}", "host": ["{{baseUrl}}"], "path": ["espacios", "{{espacioId}}"] }
+          }
+        },
+        {
+          "name": "Crear espacio como ADMIN (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Devuelve cabecera Location', () => pm.expect(pm.response.headers.get('Location')).to.not.be.null);",
+                  "pm.collectionVariables.set('espacioCreadoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Sala Creada por Postman\",\n  \"tipo\": \"SALA_REUNIONES\",\n  \"capacidad\": 6,\n  \"ubicacion\": \"Piso 2 - Ala Este\",\n  \"tarifaHora\": 18.50\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/espacios", "host": ["{{baseUrl}}"], "path": ["espacios"] }
+          }
+        },
+        {
+          "name": "Actualizar espacio (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Tarifa actualizada', () => pm.expect(Number(pm.response.json().tarifaHora)).to.eql(22.75));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Sala Creada por Postman\",\n  \"tipo\": \"SALA_REUNIONES\",\n  \"capacidad\": 8,\n  \"ubicacion\": \"Piso 2 - Ala Este\",\n  \"tarifaHora\": 22.75,\n  \"activo\": true\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/espacios/{{espacioCreadoId}}", "host": ["{{baseUrl}}"], "path": ["espacios", "{{espacioCreadoId}}"] }
+          }
+        },
+        {
+          "name": "Desactivar espacio (204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": { "raw": "{{baseUrl}}/espacios/{{espacioCreadoId}}", "host": ["{{baseUrl}}"], "path": ["espacios", "{{espacioCreadoId}}"] },
+            "description": "Baja logica: el espacio no se borra, se marca como inactivo. Un borrado fisico fallaria por el ON DELETE RESTRICT si tuviera reservas."
+          }
+        },
+        {
+          "name": "Crear espacio como USER (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 403 - USER no puede crear', () => pm.response.to.have.status(403));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Intento no autorizado\",\n  \"tipo\": \"SALA_REUNIONES\",\n  \"capacidad\": 4,\n  \"ubicacion\": \"Piso 1\",\n  \"tarifaHora\": 10.00\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/espacios", "host": ["{{baseUrl}}"], "path": ["espacios"] }
+          }
+        },
+        {
+          "name": "Sin token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 401 - sin autenticacion', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/espacios", "host": ["{{baseUrl}}"], "path": ["espacios"] },
+            "description": "401 y no 403: la distincion la hace el AuthenticationEntryPoint personalizado."
+          }
+        },
+        {
+          "name": "Espacio inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Formato ProblemDetail', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql(404);",
+                  "  pm.expect(body.detail).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/espacios/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["espacios", "00000000-0000-0000-0000-000000000000"]
+            }
+          }
+        },
+        {
+          "name": "Tipo de espacio invalido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Tipo inexistente\",\n  \"tipo\": \"INVENTADO\",\n  \"capacidad\": 4,\n  \"ubicacion\": \"Piso 1\",\n  \"tarifaHora\": 10.00\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/espacios", "host": ["{{baseUrl}}"], "path": ["espacios"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Reservas",
+      "description": "Crea ocho reservas consecutivas que alimentan las carpetas siguientes.",
+      "item": [
+        {
+          "name": "Crear reserva 1 (08:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('reservaId1', body.id);",
+                  "pm.test('Estado inicial PENDING', () => pm.expect(body.estado).to.eql('PENDING'));",
+                  "pm.test('Monto calculado a partir de la tarifa', () => pm.expect(Number(body.montoTotal)).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T08:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T09:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Crear reserva 2 (10:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservaId2', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T10:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T11:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Crear reserva 3 (12:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservaId3', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T12:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T13:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Crear reserva 4 (14:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservaId4', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T14:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T15:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Crear reserva 5 (16:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservaId5', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T16:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T17:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Crear reserva 6 (18:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservaId6', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T18:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T19:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Crear reserva 7 (20:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservaId7', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T20:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T21:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Crear reserva 8 (22:00)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('reservaId8', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T22:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T23:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Reserva solapada (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409 - solapamiento detectado', () => pm.response.to.have.status(409));",
+                  "pm.test('Mensaje explicativo', () => {",
+                  "  pm.expect(pm.response.json().detail.toLowerCase()).to.include('reserva');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T08:30:00{{offset}}\",\n  \"fin\": \"{{fecha}}T09:30:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] },
+            "description": "Solapa con la reserva 1 (08:00-09:00). La verificacion previa devuelve el 409; la exclusion constraint de PostgreSQL cubre el caso concurrente."
+          }
+        },
+        {
+          "name": "Reserva adyacente (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 - el rango semiabierto permite adyacencia', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T09:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T10:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] },
+            "description": "Empieza justo donde termina la reserva 1 y acaba donde empieza la 2. tstzrange es semiabierto, asi que no hay solapamiento."
+          }
+        },
+        {
+          "name": "Rango invertido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T16:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T15:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Fecha en el pasado (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 400 - @Future rechaza el pasado', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"2020-01-01T10:00:00-06:00\",\n  \"fin\": \"2020-01-01T11:00:00-06:00\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Listar mis reservas (USER)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Respuesta paginada', () => pm.expect(pm.response.json().content).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reservas?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["reservas"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "estado", "value": "PENDING", "disabled": true },
+                { "key": "espacioId", "value": "{{espacioId}}", "disabled": true },
+                { "key": "desde", "value": "{{fecha}}T00:00:00{{offset}}", "disabled": true },
+                { "key": "hasta", "value": "{{fecha}}T23:59:59{{offset}}", "disabled": true }
+              ]
+            },
+            "description": "Un USER solo ve sus propias reservas: el filtro por usuario se impone en el servicio, no en el parametro."
+          }
+        },
+        {
+          "name": "Listar todas las reservas (ADMIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] }
+          }
+        },
+        {
+          "name": "Obtener reserva por id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId1}}", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId1}}"] }
+          }
+        },
+        {
+          "name": "Reserva inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 404', () => pm.response.to.have.status(404));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reservas/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["reservas", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Una reserva ajena tambien devuelve 404 y no 403: un 403 confirmaria que el recurso existe."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Maquina de estados",
+      "description": "Verifica las transiciones validas e invalidas del patron State.",
+      "item": [
+        {
+          "name": "Cancelar reserva 1 (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado CANCELLED', () => pm.expect(pm.response.json().estado).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId1}}", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId1}}"] },
+            "description": "PENDING permite cancelar. Al cancelarse se publica un evento de dominio que invalida el cache de reportes."
+          }
+        },
+        {
+          "name": "Cancelar de nuevo (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409 - transicion invalida', () => pm.response.to.have.status(409));",
+                  "pm.test('El mensaje indica el estado actual', () => {",
+                  "  pm.expect(pm.response.json().detail).to.include('CANCELLED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId1}}", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId1}}"] },
+            "description": "CANCELLED es terminal: CanceladaState no sobrescribe ninguna transicion, asi que el default de la interfaz la rechaza. Devuelve 409 y no 400 porque la peticion esta bien formada; es el estado del recurso el que impide la operacion."
+          }
+        },
+        {
+          "name": "Confirmar reserva cancelada (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 409 - no se puede confirmar una cancelada', () => pm.response.to.have.status(409));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"VISA\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId1}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId1}}", "confirmar"] }
+          }
+        },
+        {
+          "name": "Reservar el horario liberado (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 - cancelar libera la franja', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"espacioId\": \"{{espacioId}}\",\n  \"inicio\": \"{{fecha}}T08:00:00{{offset}}\",\n  \"fin\": \"{{fecha}}T09:00:00{{offset}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/reservas", "host": ["{{baseUrl}}"], "path": ["reservas"] },
+            "description": "El mismo horario de la reserva 1, ahora cancelada. La exclusion constraint lleva WHERE estado <> 'CANCELLED', de modo que la franja vuelve a estar disponible."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Circuit Breaker",
+      "description": "Secuencia para demostrar el circuit breaker. EJECUTAR SEGUIDA: el circuito pasa a HALF_OPEN a los 10 segundos de abrirse.\n\nConfiguracion relevante: minimumNumberOfCalls=5, failureRateThreshold=50%, waitDurationInOpenState=10s.",
+      "item": [
+        {
+          "name": "Paso 0 - Estado inicial",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const cb = pm.response.json().circuitBreakers.pago;",
+                  "console.log('Estado inicial: ' + cb.state + ' | llamadas: ' + cb.bufferedCalls);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": { "raw": "{{baseUrl}}/actuator/circuitbreakers", "host": ["{{baseUrl}}"], "path": ["actuator", "circuitbreakers"] }
+          }
+        },
+        {
+          "name": "Paso 1 - Confirmar con VISA (CONFIRMED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Reserva CONFIRMED', () => pm.expect(pm.response.json().estado).to.eql('CONFIRMED'));",
+                  "console.log('Pago aprobado. Revisar los logs: la notificacion asincrona aparece ~1.5s despues, en el hilo notif-N');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"VISA\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId2}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId2}}", "confirmar"] },
+            "description": "Camino feliz. El stub de WireMock devuelve approved=true con un authorizationId generado."
+          }
+        },
+        {
+          "name": "Paso 2 - Fallo 1 (FAIL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 - el fallback evita propagar el error', () => pm.response.to.have.status(200));",
+                  "pm.test('Reserva en PENDING_PAYMENT', () => pm.expect(pm.response.json().estado).to.eql('PENDING_PAYMENT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"FAIL\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId3}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId3}}", "confirmar"] },
+            "description": "El stub devuelve 503. El fallback deja la reserva en PENDING_PAYMENT en lugar de fallar la peticion."
+          }
+        },
+        {
+          "name": "Paso 3 - Fallo 2 (FAIL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('PENDING_PAYMENT', () => pm.expect(pm.response.json().estado).to.eql('PENDING_PAYMENT'));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"FAIL\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId4}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId4}}", "confirmar"] }
+          }
+        },
+        {
+          "name": "Paso 4 - Fallo 3 (FAIL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('PENDING_PAYMENT', () => pm.expect(pm.response.json().estado).to.eql('PENDING_PAYMENT'));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"FAIL\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId5}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId5}}", "confirmar"] }
+          }
+        },
+        {
+          "name": "Paso 5 - Fallo 4 (FAIL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('PENDING_PAYMENT', () => pm.expect(pm.response.json().estado).to.eql('PENDING_PAYMENT'));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"FAIL\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId6}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId6}}", "confirmar"] }
+          }
+        },
+        {
+          "name": "Paso 6 - Fallo 5 (FAIL, abre el circuito)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PENDING_PAYMENT', () => pm.expect(pm.response.json().estado).to.eql('PENDING_PAYMENT'));",
+                  "console.log('Quinta llamada: se alcanza minimumNumberOfCalls y la tasa de fallo supera el 50%');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"FAIL\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId7}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId7}}", "confirmar"] },
+            "description": "Resilience4j no calcula la tasa de fallos hasta alcanzar minimumNumberOfCalls (5). Con 6 llamadas y 5 fallidas, la tasa es del 83% y el circuito se abre."
+          }
+        },
+        {
+          "name": "Paso 7 - Circuito ABIERTO",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cb = pm.response.json().circuitBreakers.pago;",
+                  "console.log('Estado: ' + cb.state + ' | tasa de fallos: ' + cb.failureRate);",
+                  "pm.test('Circuito OPEN', () => pm.expect(cb.state).to.eql('OPEN'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": { "raw": "{{baseUrl}}/actuator/circuitbreakers", "host": ["{{baseUrl}}"], "path": ["actuator", "circuitbreakers"] },
+            "description": "Si aparece HALF_OPEN, pasaron mas de 10 segundos desde el paso 6. Repetir la secuencia mas rapido o subir waitDurationInOpenState temporalmente."
+          }
+        },
+        {
+          "name": "Paso 8 - VISA con el circuito abierto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('El circuito rechaza aunque VISA funcione', () => {",
+                  "  pm.expect(pm.response.json().estado).to.eql('PENDING_PAYMENT');",
+                  "});",
+                  "console.log('La peticion no llego a WireMock: verificarlo con la carpeta 7');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenUser}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"VISA\"\n}" },
+            "url": { "raw": "{{baseUrl}}/reservas/{{reservaId8}}/confirmar", "host": ["{{baseUrl}}"], "path": ["reservas", "{{reservaId8}}", "confirmar"] },
+            "description": "LA PRUEBA CLAVE. VISA funciona perfectamente, pero el circuito abierto corta la llamada antes de realizarla y la reserva cae al fallback."
+          }
+        },
+        {
+          "name": "Paso 9 - Recuperacion tras 11s",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('Esperando la transicion automatica OPEN -> HALF_OPEN...');",
+                  "const fin = Date.now() + 11000;",
+                  "while (Date.now() < fin) { /* espera activa: Postman no dispone de sleep */ }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cb = pm.response.json().circuitBreakers.pago;",
+                  "console.log('Estado tras la espera: ' + cb.state);",
+                  "pm.test('Transiciono desde OPEN', () => pm.expect(['HALF_OPEN', 'CLOSED']).to.include(cb.state));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": { "raw": "{{baseUrl}}/actuator/circuitbreakers", "host": ["{{baseUrl}}"], "path": ["actuator", "circuitbreakers"] },
+            "description": "automaticTransitionFromOpenToHalfOpenEnabled hace que el circuito pase solo a HALF_OPEN. Desde ahi, llamadas exitosas lo devuelven a CLOSED. La espera activa bloquea la interfaz unos segundos."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Reportes y cache",
+      "description": "Ejecutar en orden para observar el cache llenandose e invalidandose.",
+      "item": [
+        {
+          "name": "Ocupacion - primera llamada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Devuelve todos los espacios activos', () => pm.expect(body).to.be.an('array'));",
+                  "pm.test('Incluye espacios sin reservas', () => {",
+                  "  pm.expect(body.length).to.be.above(0);",
+                  "});",
+                  "pm.collectionVariables.set('primerTiempo', pm.response.responseTime);",
+                  "console.log('Tiempo primera llamada: ' + pm.response.responseTime + 'ms (consulta a base)');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reportes/ocupacion?desde={{fecha}}T00:00:00{{offset}}&hasta={{fecha}}T23:59:59{{offset}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["reportes", "ocupacion"],
+              "query": [
+                { "key": "desde", "value": "{{fecha}}T00:00:00{{offset}}" },
+                { "key": "hasta", "value": "{{fecha}}T23:59:59{{offset}}" }
+              ]
+            },
+            "description": "Solo cuentan las reservas CONFIRMED y COMPLETED. El left join hace que los espacios sin reservas aparezcan con ocupacion cero en lugar de desaparecer."
+          }
+        },
+        {
+          "name": "Ocupacion - segunda llamada (cacheada)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "console.log('Tiempo segunda llamada: ' + pm.response.responseTime + 'ms (cache)');",
+                  "console.log('Verificar en los logs de la aplicacion: esta llamada NO debe generar SQL');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reportes/ocupacion?desde={{fecha}}T00:00:00{{offset}}&hasta={{fecha}}T23:59:59{{offset}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["reportes", "ocupacion"],
+              "query": [
+                { "key": "desde", "value": "{{fecha}}T00:00:00{{offset}}" },
+                { "key": "hasta", "value": "{{fecha}}T23:59:59{{offset}}" }
+              ]
+            },
+            "description": "La evidencia solida no es el tiempo (la primera llamada tambien paga inicializaciones) sino la ausencia de SQL en los logs."
+          }
+        },
+        {
+          "name": "Metricas del cache",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics/cache.gets?tag=result:hit",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "metrics", "cache.gets"],
+              "query": [{ "key": "tag", "value": "result:hit" }]
+            },
+            "description": "Disponible gracias a recordStats() en la configuracion de Caffeine. El contador de hits sube con cada llamada servida del cache."
+          }
+        },
+        {
+          "name": "Ocupacion como USER (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 403 - el reporte es solo para ADMIN', () => pm.response.to.have.status(403));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reportes/ocupacion?desde={{fecha}}T00:00:00{{offset}}&hasta={{fecha}}T23:59:59{{offset}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["reportes", "ocupacion"],
+              "query": [
+                { "key": "desde", "value": "{{fecha}}T00:00:00{{offset}}" },
+                { "key": "hasta", "value": "{{fecha}}T23:59:59{{offset}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Servicio de pago (WireMock)",
+      "description": "Peticiones directas al mock, sin pasar por la API. Utiles para verificar los stubs y para comprobar que el circuito abierto corta las llamadas.",
+      "item": [
+        {
+          "name": "Stub aprobado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Aprobado con authorizationId', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.approved).to.be.true;",
+                  "  pm.expect(body.authorizationId).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"VISA\"\n}" },
+            "url": { "raw": "{{wiremockUrl}}/payments/validate", "host": ["{{wiremockUrl}}"], "path": ["payments", "validate"] }
+          }
+        },
+        {
+          "name": "Stub lento (8 segundos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('Tardo ' + pm.response.responseTime + 'ms');",
+                  "pm.test('Demora suficiente para disparar el readTimeout de 3s', () => {",
+                  "  pm.expect(pm.response.responseTime).to.be.above(5000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"SLOW\"\n}" },
+            "url": { "raw": "{{wiremockUrl}}/payments/validate", "host": ["{{wiremockUrl}}"], "path": ["payments", "validate"] },
+            "description": "Sin timeout en el cliente, una respuesta lenta nunca se convierte en fallo y el circuito jamas se abriria."
+          }
+        },
+        {
+          "name": "Stub error 503",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 503', () => pm.response.to.have.status(503));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentMethod\": \"FAIL\"\n}" },
+            "url": { "raw": "{{wiremockUrl}}/payments/validate", "host": ["{{wiremockUrl}}"], "path": ["payments", "validate"] }
+          }
+        },
+        {
+          "name": "Peticiones recibidas por WireMock",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{wiremockUrl}}/__admin/requests", "host": ["{{wiremockUrl}}"], "path": ["__admin", "requests"] },
+            "description": "Con el circuito en OPEN no deben aparecer peticiones nuevas de la API: esa ausencia es la evidencia mas contundente de que el breaker corta las llamadas."
+          }
+        },
+        {
+          "name": "Limpiar el registro de peticiones",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{wiremockUrl}}/__admin/requests", "host": ["{{wiremockUrl}}"], "path": ["__admin", "requests"] },
+            "description": "Util antes de una demo: deja el registro en blanco para que solo aparezcan las llamadas de la secuencia."
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Actuator",
+      "item": [
+        {
+          "name": "Health (publico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 sin autenticacion', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/actuator/health", "host": ["{{baseUrl}}"], "path": ["actuator", "health"] }
+          }
+        },
+        {
+          "name": "Info (publico)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/actuator/info", "host": ["{{baseUrl}}"], "path": ["actuator", "info"] }
+          }
+        },
+        {
+          "name": "Metrics como ADMIN (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": { "raw": "{{baseUrl}}/actuator/metrics", "host": ["{{baseUrl}}"], "path": ["actuator", "metrics"] }
+          }
+        },
+        {
+          "name": "Metrics como USER (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 403 - autenticado pero sin rol', () => pm.response.to.have.status(403));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenUser}}" }],
+            "url": { "raw": "{{baseUrl}}/actuator/metrics", "host": ["{{baseUrl}}"], "path": ["actuator", "metrics"] }
+          }
+        },
+        {
+          "name": "Metrics sin token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 401 - sin autenticar', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/actuator/metrics", "host": ["{{baseUrl}}"], "path": ["actuator", "metrics"] },
+            "description": "El contraste 401 / 403 / 200 sobre el mismo endpoint demuestra que la distincion entre no autenticado y no autorizado esta bien implementada."
+          }
+        },
+        {
+          "name": "Estado de los circuit breakers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": { "raw": "{{baseUrl}}/actuator/circuitbreakers", "host": ["{{baseUrl}}"], "path": ["actuator", "circuitbreakers"] }
+          }
+        }
+      ]
+    }
+  ]
+}
